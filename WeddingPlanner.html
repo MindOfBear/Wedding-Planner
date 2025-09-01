@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Wedding Table Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex p-6">
+  <!-- Table list -->
+  <div class="w-1/3 bg-white rounded-2xl shadow-lg p-4 overflow-y-auto">
+    <h2 class="text-xl font-semibold mb-4">Tables & Guests</h2>
+    <div id="totalGuests" class="mb-4 text-lg font-semibold text-blue-600">Total Guests: 0</div>
+    <div id="tableList" class="space-y-3"></div>
+    <button id="downloadBtn" class="mt-4 bg-green-600 text-white px-4 py-2 rounded-xl shadow hover:bg-green-700">Download Data</button>
+  </div>
+
+  <!-- Tables -->
+  <div class="flex-1 flex flex-col items-center justify-start p-6">
+    <div class="mb-6 flex space-x-3">
+      <input id="seatInput" type="number" min="1" class="border rounded-lg p-2 w-32" placeholder="Seats" />
+      <button id="addTableBtn" class="bg-blue-600 text-white px-4 py-2 rounded-xl shadow hover:bg-blue-700">Add Table</button>
+    </div>
+
+    <div id="tablesArea" class="grid grid-cols-2 gap-6 w-full"></div>
+  </div>
+
+  <!-- Modal -->
+  <div id="nameModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+    <div class="bg-white rounded-xl shadow-lg p-6 w-80">
+      <h2 class="text-lg font-semibold mb-4">Add Guest</h2>
+      <input id="guestNameInput" type="text" class="border rounded-lg p-2 w-full mb-2" placeholder="Guest name" />
+      <input id="guestCountInput" type="number" min="1" class="border rounded-lg p-2 w-full mb-4" placeholder="Number of people" />
+      <div class="flex justify-end space-x-3">
+        <button id="cancelBtn" class="px-4 py-2 rounded-lg bg-gray-300 hover:bg-gray-400">Cancel</button>
+        <button id="saveBtn" class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let tables = JSON.parse(localStorage.getItem("tablesData")) || [];
+    let tableIdCounter = tables.length > 0 ? Math.max(...tables.map(t => t.id)) + 1 : 1;
+    let currentTable = null;
+
+    const addTableBtn = document.getElementById("addTableBtn");
+    const seatInput = document.getElementById("seatInput");
+    const tablesArea = document.getElementById("tablesArea");
+    const tableList = document.getElementById("tableList");
+    const totalGuestsDiv = document.getElementById("totalGuests");
+
+    const nameModal = document.getElementById("nameModal");
+    const guestNameInput = document.getElementById("guestNameInput");
+    const guestCountInput = document.getElementById("guestCountInput");
+    const cancelBtn = document.getElementById("cancelBtn");
+    const saveBtn = document.getElementById("saveBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
+
+    addTableBtn.addEventListener("click", () => {
+      const seats = parseInt(seatInput.value);
+      if (!seats || seats <= 0) return;
+
+      const table = {
+        id: tableIdCounter++,
+        seats,
+        persons: [] 
+      };
+      tables.push(table);
+      saveData();
+      seatInput.value = "";
+      renderTables();
+    });
+
+    function openModal(table) {
+      currentTable = table;
+      guestNameInput.value = "";
+      guestCountInput.value = 1;
+      nameModal.classList.remove("hidden");
+      guestNameInput.focus();
+    }
+
+    function closeModal() {
+      nameModal.classList.add("hidden");
+      currentTable = null;
+    }
+
+    cancelBtn.addEventListener("click", closeModal);
+
+    saveBtn.addEventListener("click", () => {
+      const name = guestNameInput.value.trim();
+      const count = parseInt(guestCountInput.value);
+      if (name && count > 0 && currentTable) {
+        const totalSeatsUsed = currentTable.persons.reduce((sum, p) => sum + p.count, 0);
+        if (totalSeatsUsed + count <= currentTable.seats) {
+          currentTable.persons.push({ name, count });
+          saveData();
+          renderTables();
+          closeModal();
+        } else {
+          alert("Not enough seats at this table for all guests!");
+        }
+      }
+    });
+
+    downloadBtn.addEventListener("click", () => {
+      const dataStr = tables.map(t => {
+        return `Table #${t.id} (${t.persons.reduce((sum,p)=>sum+p.count,0)}/${t.seats})\n` + t.persons.map(p => `- ${p.name} (${p.count})`).join("\n");
+      }).join("\n\n");
+
+      const blob = new Blob([dataStr], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "wedding_tables.txt";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    function saveData() {
+      localStorage.setItem("tablesData", JSON.stringify(tables));
+      updateTotalGuests();
+    }
+
+    function updateTotalGuests() {
+      const total = tables.reduce((sum, t) => sum + t.persons.reduce((s,p)=>s+p.count,0), 0);
+      totalGuestsDiv.innerText = `Total Guests: ${total}`;
+    }
+
+    function removeGuest(table, guest) {
+      table.persons = table.persons.filter(p => p !== guest);
+      saveData();
+      renderTables();
+    }
+
+    function editTable(table) {
+      const newSeats = prompt("Enter new number of seats:", table.seats);
+      const numSeats = parseInt(newSeats);
+      const totalGuestsAtTable = table.persons.reduce((sum,p)=>sum+p.count,0);
+      if (!numSeats || numSeats < totalGuestsAtTable) {
+        alert(`Number of seats must be at least ${totalGuestsAtTable}`);
+        return;
+      }
+      table.seats = numSeats;
+      saveData();
+      renderTables();
+    }
+
+    function renderTables() {
+      tablesArea.innerHTML = "";
+      tableList.innerHTML = "";
+
+      tables.forEach(table => {
+        const tableDiv = document.createElement("div");
+        tableDiv.className = "relative flex flex-wrap justify-center items-center w-48 h-48 bg-green-200 rounded-full shadow cursor-pointer hover:scale-105 transition";
+        tableDiv.innerHTML = `<span class='absolute top-2 left-2 text-sm font-bold'>#${table.id}</span>`;
+
+        table.persons.forEach(p => {
+          const seat = document.createElement("div");
+          seat.className = "text-xs font-medium bg-white rounded-full px-2 py-1 m-1 shadow flex items-center space-x-1";
+          seat.innerHTML = `<span>${p.name} (${p.count})</span> <button class="text-red-500 font-bold text-sm">&minus;</button>`;
+          seat.querySelector("button").addEventListener("click", (e) => {
+            e.stopPropagation();
+            removeGuest(table, p);
+          });
+          tableDiv.appendChild(seat);
+        });
+
+        tableDiv.addEventListener("click", () => {
+          const totalSeatsUsed = table.persons.reduce((sum, p) => sum + p.count, 0);
+          if (totalSeatsUsed < table.seats) {
+            openModal(table);
+          } else {
+            alert("This table is full!");
+          }
+        });
+
+        tablesArea.appendChild(tableDiv);
+
+        const listDiv = document.createElement("div");
+        listDiv.className = "border rounded-lg p-3 bg-gray-50";
+        listDiv.innerHTML = `
+          <div class="flex justify-between items-center">
+            <h3 class='font-semibold'>Table #${table.id} (${table.persons.reduce((sum,p)=>sum+p.count,0)}/${table.seats})</h3>
+            <button class="text-blue-600 font-bold text-sm">Edit</button>
+          </div>
+        `;
+        listDiv.querySelector("button").addEventListener("click", () => editTable(table));
+
+        if (table.persons.length > 0) {
+          const ul = document.createElement("ul");
+          ul.className = "list-disc list-inside text-sm mt-1";
+          table.persons.forEach(p => {
+            const li = document.createElement("li");
+            li.innerText = `${p.name} (${p.count})`;
+            ul.appendChild(li);
+          });
+          listDiv.appendChild(ul);
+        }
+        tableList.appendChild(listDiv);
+      });
+
+      updateTotalGuests();
+    }
+
+    renderTables();
+  </script>
+</body>
+</html>
